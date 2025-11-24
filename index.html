@@ -234,89 +234,110 @@
             attr.needsUpdate = true;
         }
 
-        // --- 3. 核心：摄像头启动 ---
+        // --- 3. 核心：终极修复版摄像头启动 ---
         async function startCameraSystem() {
             log("开始请求摄像头权限...");
             
-            // 检查环境
+            // 0. 环境检查
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                log("❌ 致命错误：当前浏览器不支持 getUserMedia。请检查是否为 HTTPS。");
-                alert("摄像头启动失败：浏览器不支持。请确保使用 HTTPS 访问，或使用 Safari/Chrome。");
+                alert("浏览器不支持摄像头 API，请使用 Safari 或 Chrome");
                 return;
             }
 
             const video = document.getElementById('cam-preview');
+            let stream = null;
 
             try {
-                // 1. 先尝试直接获取流，不经过 MediaPipe
-                log("尝试获取原始视频流 (facingMode: user)...");
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: false,
-                    video: {
-                        facingMode: 'user', // 强制前置
-                        width: { ideal: 320 },
-                        height: { ideal: 240 }
+                // 1. 尝试策略 A：标准手机前置配置
+                log("尝试策略 A (前置+低分)...");
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        audio: false,
+                        video: {
+                            facingMode: 'user', // 优先前置
+                            width: { ideal: 320 }, // 理想宽度
+                            height: { ideal: 240 } // 理想高度
+                        }
+                    });
+                } catch (errA) {
+                    log("策略 A 失败 (" + errA.name + ")，尝试策略 B...");
+                    
+                    // 2. 尝试策略 B：只要是前置就行，不管分辨率
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            audio: false,
+                            video: { facingMode: 'user' }
+                        });
+                    } catch (errB) {
+                        log("策略 B 失败，尝试策略 C (任意摄像头)...");
+                        
+                        // 3. 尝试策略 C：只要是个摄像头就行 (后置也可以，总比没有强)
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            audio: false,
+                            video: true
+                        });
                     }
-                });
-                
-                log("✅ 获取流成功！正在附加到 Video 标签...");
-                video.srcObject = stream;
-                // iOS 必须显式调用 play
-                await video.play();
-                log("✅ 视频流正在播放。");
+                }
 
-                // 2. 视频流通了之后，再加载 AI
-                log("正在加载 MediaPipe 手势模型...");
+                if (!stream) throw new Error("三次尝试均未能获取视频流");
+
+                log("✅ 获取流成功！");
+                video.srcObject = stream;
+                
+                // iOS 必须显式调用 play，且要在 promise 中捕获错误
+                try {
+                    await video.play();
+                } catch (playErr) {
+                    log("播放失败，可能是 iOS 限制: " + playErr.message);
+                }
+                
+                log("✅ 视频流正在播放，启动 AI...");
+
+                // 4. 加载 AI 模型
                 const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
                 hands.setOptions({
                     maxNumHands: 1,
-                    modelComplexity: 0, // 性能模式
+                    modelComplexity: 0, 
                     minDetectionConfidence: 0.5,
                     minTrackingConfidence: 0.5
                 });
 
                 hands.onResults(onHandResults);
 
-                // 使用 requestAnimationFrame 循环发送视频帧
+                // 循环发送帧
                 async function loop() {
-                    await hands.send({image: video});
+                    if (video.readyState >= 2) { // 确保视频已准备好
+                        await hands.send({image: video});
+                    }
                     requestAnimationFrame(loop);
                 }
                 loop();
-                log("✅ AI 模型循环已启动。请展示手势。");
                 
-                // 隐藏启动层
+                log("✅ 系统完全启动！");
                 document.getElementById('start-overlay').style.display = 'none';
 
             } catch (err) {
-                log("❌ 摄像头启动失败: " + err.name + " - " + err.message);
-                alert("摄像头失败：" + err.message + "\n可能是权限被拒或不是 HTTPS 环境。");
-            }
-        }
-
-        function onHandResults(results) {
-            if (results.multiHandLandmarks.length > 0) {
-                const lm = results.multiHandLandmarks[0];
-                // 计算距离：4(拇指) 到 8(食指)
-                const d = Math.sqrt(Math.pow(lm[4].x - lm[8].x, 2) + Math.pow(lm[4].y - lm[8].y, 2));
+                let errorMsg = "未知错误";
                 
-                // 距离映射：d大(张开) -> 0, d小(捏合) -> 1
-                // 阈值设宽一点方便检测
-                let val = THREE.MathUtils.smoothstep(d, 0.02, 0.18);
-                targetExpansion = 1.0 - val;
+                // 针对 NotReadableError 的专门提示
+                if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                    errorMsg = "摄像头被占用！请关闭其他网页或视频软件。";
+                } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    errorMsg = "权限被拒绝。请在设置中允许访问摄像头。";
+                } else if (err.name === 'OverconstrainedError') {
+                    errorMsg = "设备不支持所请求的分辨率。";
+                } else {
+                    errorMsg = err.name + ": " + err.message;
+                }
+
+                log("❌ 最终失败: " + errorMsg);
+                alert("启动失败: " + errorMsg + "\n\n已自动切换到触摸/鼠标模式。");
+                
+                // 失败后自动切换到触控模式，避免尴尬
+                document.getElementById('start-overlay').style.display = 'none';
+                isCameraActive = false; // 确保使用触控逻辑
             }
         }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            handExpansion += (targetExpansion - handExpansion) * 0.1;
-            if(mesh) {
-                mesh.material.uniforms.uTime.value = performance.now()*0.001;
-                mesh.material.uniforms.uExp.value = handExpansion;
-            }
-            renderer.render(scene, camera);
-        }
-
         // --- 绑定按钮 ---
         document.getElementById('start-btn').addEventListener('click', () => {
             log("用户点击了启动按钮");
