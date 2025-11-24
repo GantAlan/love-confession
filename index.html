@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D 表白 (手机修复版)</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #canvas-box { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        
+        /* 调试控制台 - 显示在屏幕上方 */
+        #debug-console {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100px;
+            background: rgba(0,0,0,0.8); color: #00ff00; font-family: monospace;
+            font-size: 10px; padding: 5px; overflow-y: auto; z-index: 9999;
+            pointer-events: none; display: block; /* 调试完可隐藏 */
+            border-bottom: 1px solid #333;
+        }
+
+        /* 启动层 */
+        #start-overlay {
+            position: fixed; inset: 0; background: #000; z-index: 100;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            text-align: center; color: white;
+        }
+        
+        .big-btn {
+            background: linear-gradient(135deg, #ff0088, #ff5500);
+            border: none; padding: 20px 40px; border-radius: 50px;
+            color: white; font-size: 18px; font-weight: bold; margin-top: 20px;
+            box-shadow: 0 0 20px rgba(255, 0, 136, 0.5);
+            cursor: pointer;
+        }
+
+        /* 视频预览 (用于验证摄像头是否工作) */
+        #cam-preview {
+            position: fixed; bottom: 10px; right: 10px; width: 100px;
+            z-index: 50; border: 1px solid white; transform: scaleX(-1);
+            opacity: 0.5; background: #222;
+        }
+
+        /* UI 按钮 */
+        #next-btn {
+            position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+            padding: 15px 30px; background: rgba(255,255,255,0.15); 
+            border: 1px solid rgba(255,255,255,0.3); backdrop-filter: blur(5px);
+            color: white; border-radius: 30px; z-index: 20; font-size: 16px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div id="debug-console">系统日志启动...<br></div>
+
+    <div id="start-overlay">
+        <h1>❤️ 3D Pixel Love</h1>
+        <p style="color:#aaa; font-size:12px; max-width:80%">
+            请确保使用 HTTPS 协议<br>
+            微信请选择“在浏览器打开”
+        </p>
+        <button class="big-btn" id="start-btn">点击启动摄像头</button>
+        <button style="margin-top:15px; background:none; border:none; color:#666; text-decoration:underline" id="skip-btn">
+            无法启动？跳过
+        </button>
+    </div>
+
+    <video id="cam-preview" playsinline muted autoplay></video>
+    <div id="canvas-box"></div>
+    <button id="next-btn">下一句</button>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- 屏幕日志工具 ---
+        function log(msg) {
+            const el = document.getElementById('debug-console');
+            const time = new Date().toTimeString().split(' ')[0];
+            el.innerHTML += `[${time}] ${msg}<br>`;
+            el.scrollTop = el.scrollHeight;
+            console.log(msg);
+        }
+
+        // --- 配置 ---
+        const MESSAGES = ["Ready?", "Hi 宝", "看这里", "张开手", "给你的", "惊喜", "❤️"];
+        const CONFIG = { count: 15000, colorA: '#00e5ff', colorB: '#ff0088' }; // 手机端降低粒子数
+
+        let scene, camera, renderer, mesh;
+        let currentMsgIndex = 0;
+        let handExpansion = 1.0; // 默认散开
+        let targetExpansion = 1.0;
+
+        // --- 1. Three.js 初始化 ---
+        function initThree() {
+            log("初始化 3D 场景...");
+            const container = document.getElementById('canvas-box');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color('#050505');
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 100);
+            camera.position.z = 16; // 手机端拉远
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(renderer.domElement);
+
+            createParticles();
+            
+            // 初始文字
+            setTimeout(() => {
+                currentMsgIndex = 1;
+                updateText(MESSAGES[currentMsgIndex]);
+            }, 500);
+
+            animate();
+            log("3D 场景就绪");
+        }
+
+        // --- 2. 粒子系统 (简化版以确保稳定) ---
+        const data = { 
+            target: new Float32Array(CONFIG.count * 3), 
+            scatter: new Float32Array(CONFIG.count * 3) 
+        };
+
+        function createParticles() {
+            // 预计算散点
+            for(let i=0; i<CONFIG.count; i++) {
+                const r = 10 + Math.random() * 30;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                data.scatter[i*3] = r * Math.sin(phi) * Math.cos(theta);
+                data.scatter[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+                data.scatter[i*3+2] = r * Math.cos(phi) * 0.5;
+            }
+
+            const geo = new THREE.InstancedBufferGeometry();
+            const base = new THREE.BoxGeometry(0.8, 0.8, 0.8); // 稍微调大一点
+            geo.index = base.index;
+            geo.attributes.position = base.attributes.position;
+            geo.attributes.normal = base.attributes.normal;
+            
+            geo.setAttribute('aTarget', new THREE.InstancedBufferAttribute(data.target, 3));
+            geo.setAttribute('aScatter', new THREE.InstancedBufferAttribute(data.scatter, 3));
+            
+            const rands = new Float32Array(CONFIG.count);
+            for(let i=0; i<CONFIG.count; i++) rands[i] = Math.random();
+            geo.setAttribute('aRandom', new THREE.InstancedBufferAttribute(rands, 1));
+
+            const mat = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime: { value: 0 },
+                    uExp: { value: 1.0 },
+                    uColA: { value: new THREE.Color(CONFIG.colorA) },
+                    uColB: { value: new THREE.Color(CONFIG.colorB) }
+                },
+                vertexShader: `
+                    uniform float uTime;
+                    uniform float uExp;
+                    uniform vec3 uColA;
+                    uniform vec3 uColB;
+                    attribute vec3 aTarget;
+                    attribute vec3 aScatter;
+                    attribute float aRandom;
+                    varying vec3 vColor;
+                    
+                    mat4 rot(vec3 axis, float angle) {
+                        axis = normalize(axis);
+                        float s = sin(angle); float c = cos(angle); float oc = 1.0 - c;
+                        return mat4(oc*axis.x*axis.x+c, oc*axis.x*axis.y-axis.z*s, oc*axis.z*axis.x+axis.y*s, 0.0,
+                                    oc*axis.x*axis.y+axis.z*s, oc*axis.y*axis.y+c, oc*axis.y*axis.z-axis.x*s, 0.0,
+                                    oc*axis.z*axis.x-axis.y*s, oc*axis.y*axis.z+axis.x*s, oc*axis.z*axis.z+c, 0.0,
+                                    0.0, 0.0, 0.0, 1.0);
+                    }
+
+                    void main() {
+                        float smoothExp = smoothstep(0.0, 1.0, uExp);
+                        vec3 pos = mix(aTarget, aScatter, smoothExp);
+                        
+                        // 波动
+                        pos += vec3(sin(uTime*3.0+aRandom*10.0)*0.15*smoothExp);
+
+                        // 旋转
+                        mat4 rm = rot(normalize(vec3(aRandom,1.0,0.0)), uTime*(1.0+smoothExp*2.0) + aRandom*10.0);
+                        vec3 p = (rm * vec4(position * 0.25, 1.0)).xyz + pos; // 0.25是大小
+                        
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+
+                        // 颜色
+                        float grad = smoothstep(-6.0, 6.0, pos.x);
+                        vec3 c = mix(uColA, uColB, grad);
+                        // 简单光照
+                        vec3 n = (rm * vec4(normal, 0.0)).xyz;
+                        float l = max(dot(n, normalize(vec3(0.5,1.0,1.0))), 0.3);
+                        vColor = c * (l + 0.4);
+                    }
+                `,
+                fragmentShader: `varying vec3 vColor; void main(){ gl_FragColor = vec4(vColor,1.0); }`
+            });
+
+            mesh = new THREE.Mesh(geo, mat);
+            mesh.frustumCulled = false;
+            scene.add(mesh);
+        }
+
+        function updateText(text) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 500; canvas.height = 250;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#000'; ctx.fillRect(0,0,500,250);
+            ctx.fillStyle = '#fff'; ctx.font = '900 100px sans-serif';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(text, 250, 125);
+            
+            const imgData = ctx.getImageData(0,0,500,250).data;
+            const pts = [];
+            for(let y=0; y<250; y+=4) {
+                for(let x=0; x<500; x+=4) {
+                    if(imgData[(y*500+x)*4]>100) pts.push((x-250)*0.04, -(y-125)*0.04, 0);
+                }
+            }
+            const attr = mesh.geometry.attributes.aTarget;
+            for(let i=0; i<CONFIG.count; i++) {
+                if(pts.length===0) break;
+                const p = i % (pts.length/3);
+                attr.setXYZ(i, pts[p*3], pts[p*3+1], pts[p*3+2] + (Math.random()-0.5));
+            }
+            attr.needsUpdate = true;
+        }
+
+        // --- 3. 核心：摄像头启动 ---
+        async function startCameraSystem() {
+            log("开始请求摄像头权限...");
+            
+            // 检查环境
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                log("❌ 致命错误：当前浏览器不支持 getUserMedia。请检查是否为 HTTPS。");
+                alert("摄像头启动失败：浏览器不支持。请确保使用 HTTPS 访问，或使用 Safari/Chrome。");
+                return;
+            }
+
+            const video = document.getElementById('cam-preview');
+
+            try {
+                // 1. 先尝试直接获取流，不经过 MediaPipe
+                log("尝试获取原始视频流 (facingMode: user)...");
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        facingMode: 'user', // 强制前置
+                        width: { ideal: 320 },
+                        height: { ideal: 240 }
+                    }
+                });
+                
+                log("✅ 获取流成功！正在附加到 Video 标签...");
+                video.srcObject = stream;
+                // iOS 必须显式调用 play
+                await video.play();
+                log("✅ 视频流正在播放。");
+
+                // 2. 视频流通了之后，再加载 AI
+                log("正在加载 MediaPipe 手势模型...");
+                const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+                hands.setOptions({
+                    maxNumHands: 1,
+                    modelComplexity: 0, // 性能模式
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+
+                hands.onResults(onHandResults);
+
+                // 使用 requestAnimationFrame 循环发送视频帧
+                async function loop() {
+                    await hands.send({image: video});
+                    requestAnimationFrame(loop);
+                }
+                loop();
+                log("✅ AI 模型循环已启动。请展示手势。");
+                
+                // 隐藏启动层
+                document.getElementById('start-overlay').style.display = 'none';
+
+            } catch (err) {
+                log("❌ 摄像头启动失败: " + err.name + " - " + err.message);
+                alert("摄像头失败：" + err.message + "\n可能是权限被拒或不是 HTTPS 环境。");
+            }
+        }
+
+        function onHandResults(results) {
+            if (results.multiHandLandmarks.length > 0) {
+                const lm = results.multiHandLandmarks[0];
+                // 计算距离：4(拇指) 到 8(食指)
+                const d = Math.sqrt(Math.pow(lm[4].x - lm[8].x, 2) + Math.pow(lm[4].y - lm[8].y, 2));
+                
+                // 距离映射：d大(张开) -> 0, d小(捏合) -> 1
+                // 阈值设宽一点方便检测
+                let val = THREE.MathUtils.smoothstep(d, 0.02, 0.18);
+                targetExpansion = 1.0 - val;
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            handExpansion += (targetExpansion - handExpansion) * 0.1;
+            if(mesh) {
+                mesh.material.uniforms.uTime.value = performance.now()*0.001;
+                mesh.material.uniforms.uExp.value = handExpansion;
+            }
+            renderer.render(scene, camera);
+        }
+
+        // --- 绑定按钮 ---
+        document.getElementById('start-btn').addEventListener('click', () => {
+            log("用户点击了启动按钮");
+            startCameraSystem();
+        });
+
+        document.getElementById('skip-btn').addEventListener('click', () => {
+            log("用户跳过了摄像头");
+            document.getElementById('start-overlay').style.display = 'none';
+            // 开启触控模式
+            document.addEventListener('touchmove', (e) => {
+                targetExpansion = THREE.MathUtils.clamp(e.touches[0].clientY/window.innerHeight, 0, 1);
+            });
+        });
+
+        document.getElementById('next-btn').addEventListener('click', () => {
+            currentMsgIndex = (currentMsgIndex + 1) % MESSAGES.length;
+            if(currentMsgIndex === 0) currentMsgIndex = 1;
+            updateText(MESSAGES[currentMsgIndex]);
+        });
+
+        // 启动 Three.js
+        initThree();
+
+    </script>
+</body>
+</html>
