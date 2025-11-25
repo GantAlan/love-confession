@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>For DSY a Gift(Customizable)</title>
+    <title>3D Pixel Love (Custom)</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; touch-action: none; }
         #canvas-box { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
         
-        /* 调试日志 (默认隐藏，出错时可看) */
+        /* 调试日志 */
         #debug-console {
             position: fixed; top: 0; left: 0; width: 100%; height: 60px;
             background: rgba(0,0,0,0.5); color: #00ff00; font-family: monospace;
             font-size: 10px; padding: 5px; overflow-y: auto; z-index: 9999;
-            pointer-events: none; display: none; /* 正常使用隐藏 */
+            pointer-events: none; display: none;
         }
 
         /* --- UI 组件 --- */
@@ -28,36 +28,44 @@
             cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
 
-        /* 设置面板 (左侧滑出) */
+        /* 设置面板 */
         #settings-panel {
-            position: fixed; top: 80px; left: 20px; width: 220px;
-            background: rgba(20, 20, 30, 0.85); backdrop-filter: blur(15px);
+            position: fixed; top: 80px; left: 20px; width: 240px;
+            background: rgba(20, 20, 30, 0.9); backdrop-filter: blur(15px);
             border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;
             padding: 15px; color: white; z-index: 49;
-            transform: translateX(-150%); /* 默认隐藏 */
+            transform: translateX(-150%);
             transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+            max-height: 70vh; overflow-y: auto; /* 防止内容过长无法滚动 */
         }
         #settings-panel.active { transform: translateX(0); }
 
-        .control-group { margin-bottom: 15px; }
-        .control-label { font-size: 12px; color: #aaa; margin-bottom: 8px; display: block; }
+        .control-group { margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px; }
+        .control-group:last-child { border-bottom: none; }
+        .control-label { font-size: 12px; color: #aaa; margin-bottom: 8px; display: block; font-weight: bold; }
         
-        /* 颜色选择器布局 */
+        /* 颜色选择器 */
         .color-row { display: flex; gap: 10px; }
-        input[type="color"] {
-            flex: 1; height: 36px; border: none; border-radius: 6px; 
-            padding: 0; background: none; cursor: pointer;
-        }
+        input[type="color"] { flex: 1; height: 36px; border: none; border-radius: 6px; padding: 0; background: none; cursor: pointer; }
 
-        /* 滑块样式 */
-        input[type="range"] {
-            width: 100%; -webkit-appearance: none; background: rgba(255,255,255,0.2);
-            height: 4px; border-radius: 2px; outline: none;
+        /* 滑块 */
+        input[type="range"] { width: 100%; height: 4px; border-radius: 2px; outline: none; }
+
+        /* 文本域 (自定义文字) */
+        textarea {
+            width: 100%; background: rgba(0,0,0,0.3); border: 1px solid #444;
+            color: #fff; border-radius: 8px; padding: 8px; font-size: 14px;
+            resize: vertical; font-family: inherit; box-sizing: border-box;
         }
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
-            background: #fff; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+        textarea:focus { outline: none; border-color: #00e5ff; }
+
+        /* 全屏按钮 */
+        .setting-btn {
+            width: 100%; padding: 10px; background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+            color: white; cursor: pointer; font-size: 14px;
         }
+        .setting-btn:active { background: rgba(255,255,255,0.2); }
 
         /* 启动层 */
         #start-overlay {
@@ -76,12 +84,8 @@
         }
         .big-btn:active { transform: scale(0.95); }
 
-        .skip-link {
-            margin-top: 25px; color: #666; font-size: 14px; 
-            text-decoration: underline; background: none; border: none;
-        }
+        .skip-link { margin-top: 25px; color: #666; font-size: 14px; text-decoration: underline; background: none; border: none; }
 
-        /* 视频预览 */
         #cam-preview {
             position: fixed; bottom: 10px; right: 10px; width: 80px;
             z-index: 50; border: 1px solid rgba(255,255,255,0.3); 
@@ -89,14 +93,9 @@
             background: #000;
         }
 
-        /* 底部按钮 */
-        #ui-layer {
-            position: fixed; bottom: 40px; width: 100%; text-align: center; z-index: 20;
-            pointer-events: none;
-        }
+        #ui-layer { position: fixed; bottom: 40px; width: 100%; text-align: center; z-index: 20; pointer-events: none; }
         #next-btn {
-            pointer-events: auto;
-            padding: 14px 40px; background: rgba(255,255,255,0.1); 
+            pointer-events: auto; padding: 14px 40px; background: rgba(255,255,255,0.1); 
             border: 1px solid rgba(255,255,255,0.25); backdrop-filter: blur(8px);
             color: white; border-radius: 30px; font-size: 16px; font-weight: 600;
         }
@@ -114,25 +113,38 @@
 
     <div id="settings-panel">
         <div class="control-group">
-            <label class="control-label">渐变颜色 (Gradient)</label>
+            <label class="control-label">显示选项</label>
+            <button id="fullscreen-btn" class="setting-btn">⛶ 切换全屏显示</button>
+        </div>
+
+        <div class="control-group">
+            <label class="control-label">编辑文字 (每行一句)</label>
+            <textarea id="msg-input" rows="6" placeholder="输入你想说的话..."></textarea>
+            <div style="font-size:10px; color:#666; margin-top:5px;">修改后点击下方的“下一句”生效</div>
+        </div>
+
+        <div class="control-group">
+            <label class="control-label">渐变颜色</label>
             <div class="color-row">
                 <input type="color" id="col-a" value="#00e5ff">
                 <input type="color" id="col-b" value="#ff0088">
             </div>
         </div>
+
         <div class="control-group">
-            <label class="control-label">方块大小 (Cube Size)</label>
-            <input type="range" id="size-range" min="0.1" max="1.5" step="0.1" value="0.6">
+            <label class="control-label">方块大小</label>
+            <input type="range" id="size-range" min="0.05" max="1.0" step="0.05" value="0.5">
         </div>
-        <div style="font-size:11px; color:#666; margin-top:10px; line-height:1.4">
-            张开手掌 = 文字<br>捏合手指 = 星空
+
+        <div style="font-size:11px; color:#666; line-height:1.4">
+            张开手掌 = 文字<br>捏合手指 = 星空<br>文本最多五个字
         </div>
     </div>
 
     <div id="start-overlay">
         <div style="font-size: 50px; margin-bottom: 10px;">❤️</div>
         <h1 style="margin: 0; font-weight: 300;">3D Pixel Love</h1>
-        <p style="color:#888; font-size:12px; margin-top: 10px;">HTTPS Required | iOS Safari Recommended</p>
+        <p style="color:#888; font-size:12px; margin-top: 10px;">HTTPS Required</p>
         <button class="big-btn" id="start-btn">点击启动摄像头</button>
         <button class="skip-link" id="skip-btn">无法启动？点此跳过</button>
     </div>
@@ -151,17 +163,15 @@
     <script type="module">
         import * as THREE from 'three';
 
-        // --- 日志 ---
         function log(msg) {
             const el = document.getElementById('debug-console');
-            // el.style.display = 'block'; // 如果需要看日志，取消注释这行
             el.innerHTML += `> ${msg}<br>`;
             console.log(msg);
         }
 
-        // --- 配置 ---
+        // --- 核心数据 ---
+        // 初始默认文案
         const MESSAGES = ["Ready?", "Hi 宝", "看这里", "张开手", "给你看", "我的心意", "❤️"];
-        // 手机端粒子数适中
         const CONFIG = { count: 16000 }; 
 
         let scene, camera, renderer, mesh;
@@ -170,14 +180,13 @@
         let targetExpansion = 1.0;
         let isCameraRunning = false;
 
-        // 状态管理 (用于 UI 控制)
         const state = {
             cubeSize: 0.6,
             colA: new THREE.Color('#00e5ff'),
             colB: new THREE.Color('#ff0088')
         };
 
-        // --- 1. Three.js ---
+        // --- Three.js 初始化 ---
         function initThree() {
             log("Init 3D...");
             const container = document.getElementById('canvas-box');
@@ -206,7 +215,7 @@
                 renderer.setSize(window.innerWidth, window.innerHeight);
             });
 
-            bindUIControls(); // 绑定 UI 事件
+            bindUIControls();
             animate();
         }
 
@@ -214,7 +223,6 @@
             camera.position.z = window.innerWidth < window.innerHeight ? 18 : 14;
         }
 
-        // --- 2. 粒子 ---
         const data = { 
             target: new Float32Array(CONFIG.count * 3), 
             scatter: new Float32Array(CONFIG.count * 3) 
@@ -231,7 +239,7 @@
             }
 
             const geo = new THREE.InstancedBufferGeometry();
-            const base = new THREE.BoxGeometry(1, 1, 1); // 基础大小为1，Shader里缩放
+            const base = new THREE.BoxGeometry(1, 1, 1);
             geo.index = base.index;
             geo.attributes.position = base.attributes.position;
             geo.attributes.normal = base.attributes.normal;
@@ -247,9 +255,9 @@
                 uniforms: {
                     uTime: { value: 0 },
                     uExp: { value: 1.0 },
-                    uSize: { value: state.cubeSize }, // 绑定 size
-                    uColA: { value: state.colA },     // 绑定颜色 A
-                    uColB: { value: state.colB }      // 绑定颜色 B
+                    uSize: { value: state.cubeSize },
+                    uColA: { value: state.colA },
+                    uColB: { value: state.colB }
                 },
                 vertexShader: `
                     uniform float uTime;
@@ -270,23 +278,14 @@
                                     oc*axis.z*axis.x-axis.y*s, oc*axis.y*axis.z+axis.x*s, oc*axis.z*axis.z+c, 0.0,
                                     0.0, 0.0, 0.0, 1.0);
                     }
-
                     void main() {
                         float smoothExp = smoothstep(0.0, 1.0, uExp);
                         vec3 pos = mix(aTarget, aScatter, smoothExp);
-                        
-                        // 波动
                         pos += vec3(sin(uTime*3.0+aRandom*10.0)*0.1*smoothExp);
-
-                        // 旋转
                         mat4 rm = rot(normalize(vec3(aRandom,1.0,0.0)), uTime*(1.0+smoothExp*2.0) + aRandom*10.0);
-                        
-                        // 应用 uSize 缩放
                         vec3 p = position * uSize; 
                         p = (rm * vec4(p, 1.0)).xyz + pos;
-                        
                         gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-
                         float grad = smoothstep(-6.0, 6.0, pos.x);
                         vec3 c = mix(uColA, uColB, grad);
                         vec3 n = (rm * vec4(normal, 0.0)).xyz;
@@ -327,7 +326,7 @@
             attr.needsUpdate = true;
         }
 
-        // --- 3. UI 控制逻辑 (新增) ---
+        // --- UI 控制 ---
         function bindUIControls() {
             // 面板开关
             const gearBtn = document.getElementById('gear-btn');
@@ -336,67 +335,82 @@
                 e.stopPropagation();
                 panel.classList.toggle('active');
             });
-            // 点击其他地方关闭面板
             document.addEventListener('click', (e) => {
                 if(!panel.contains(e.target) && e.target !== gearBtn) {
                     panel.classList.remove('active');
                 }
             });
 
-            // 颜色 A
-            document.getElementById('col-a').addEventListener('input', (e) => {
-                state.colA.set(e.target.value);
-            });
-            
-            // 颜色 B
-            document.getElementById('col-b').addEventListener('input', (e) => {
-                state.colB.set(e.target.value);
+            // 1. 全屏功能
+            const fsBtn = document.getElementById('fullscreen-btn');
+            fsBtn.addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(e => {
+                        alert("全屏失败(可能需要用户手势): " + e.message);
+                    });
+                } else {
+                    document.exitFullscreen();
+                }
             });
 
-            // 方块大小
+            // 2. 文字编辑 (Textarea)
+            const msgInput = document.getElementById('msg-input');
+            // 初始化内容
+            msgInput.value = MESSAGES.join('\n');
+            
+            // 监听输入
+            msgInput.addEventListener('input', () => {
+                const raw = msgInput.value;
+                const lines = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+                if (lines.length > 0) {
+                    // 清空数组并压入新内容
+                    MESSAGES.length = 0;
+                    MESSAGES.push(...lines);
+                    // 如果当前索引超出了新长度，重置
+                    if (currentMsgIndex >= MESSAGES.length) {
+                        currentMsgIndex = 0;
+                    }
+                }
+            });
+
+            // 3. 颜色
+            document.getElementById('col-a').addEventListener('input', (e) => state.colA.set(e.target.value));
+            document.getElementById('col-b').addEventListener('input', (e) => state.colB.set(e.target.value));
+
+            // 4. 大小
             document.getElementById('size-range').addEventListener('input', (e) => {
                 state.cubeSize = parseFloat(e.target.value);
                 if(mesh) mesh.material.uniforms.uSize.value = state.cubeSize;
             });
         }
 
-        // --- 4. 摄像头 & AI ---
+        // --- 摄像头 & AI ---
         async function startCameraSystem() {
-            log("启动摄像头流程...");
+            log("Start Cam...");
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                alert("浏览器不支持 getUserMedia");
-                return;
+                alert("Browser not supported"); return;
             }
 
             const video = document.getElementById('cam-preview');
             let stream = null;
 
             try {
-                // 降级策略
                 try {
-                    stream = await navigator.mediaDevices.getUserMedia({
-                        audio: false, video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } }
-                    });
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'user', width: {ideal:320}, height: {ideal:240} } });
                 } catch (e) {
-                    log("高清失败，尝试标清...");
                     try {
                         stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'user' } });
                     } catch (e2) {
-                        log("前置失败，尝试任意...");
                         stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
                     }
                 }
 
-                if (!stream) throw new Error("无法获取流");
+                if (!stream) throw new Error("No Stream");
                 video.srcObject = stream;
+                try { await video.play(); } catch(err) {}
                 
-                try { await video.play(); } catch(err) { log("Play error: " + err.message); }
-                
-                log("加载 MediaPipe...");
                 const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-                hands.setOptions({
-                    maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5
-                });
+                hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
                 
                 hands.onResults(onHandResults);
 
@@ -410,8 +424,7 @@
                 document.getElementById('start-overlay').style.display = 'none';
 
             } catch (err) {
-                let msg = err.name === 'NotReadableError' ? "摄像头被占用" : err.message;
-                alert("启动失败: " + msg + "\n已切换到触摸模式");
+                alert("Cam Error: " + err.message);
                 document.getElementById('start-overlay').style.display = 'none';
                 enableTouchMode();
             }
@@ -421,14 +434,13 @@
             if (results.multiHandLandmarks.length > 0) {
                 const lm = results.multiHandLandmarks[0];
                 const d = Math.sqrt(Math.pow(lm[4].x - lm[8].x, 2) + Math.pow(lm[4].y - lm[8].y, 2));
-                // d大(张开)=0(文字), d小(捏合)=1(星空)
                 let val = THREE.MathUtils.smoothstep(d, 0.02, 0.2);
                 targetExpansion = 1.0 - val;
             }
         }
 
         function enableTouchMode() {
-            log("启用触摸模式");
+            log("Touch mode");
             const handle = (y) => targetExpansion = THREE.MathUtils.clamp(y, 0, 1);
             document.addEventListener('mousemove', (e) => handle(e.clientY/window.innerHeight));
             document.addEventListener('touchmove', (e) => handle(e.touches[0].clientY/window.innerHeight), {passive:true});
@@ -441,7 +453,6 @@
             if(mesh) {
                 mesh.material.uniforms.uTime.value = performance.now()*0.001;
                 mesh.material.uniforms.uExp.value = handExpansion;
-                // 确保颜色和大小在动画循环中也更新（虽然 input 事件已经更新了，双保险）
                 mesh.material.uniforms.uColA.value = state.colA;
                 mesh.material.uniforms.uColB.value = state.colB;
                 mesh.material.uniforms.uSize.value = state.cubeSize;
@@ -450,7 +461,6 @@
             renderer.render(scene, camera);
         }
 
-        // --- Bindings ---
         document.getElementById('start-btn').addEventListener('click', startCameraSystem);
         document.getElementById('skip-btn').addEventListener('click', () => {
             document.getElementById('start-overlay').style.display = 'none';
@@ -458,8 +468,7 @@
         });
         document.getElementById('next-btn').addEventListener('click', () => {
             currentMsgIndex = (currentMsgIndex + 1) % MESSAGES.length;
-            if(currentMsgIndex === 0) currentMsgIndex = 1;
-            updateText(MESSAGES[currentMsgIndex]);
+            if(MESSAGES.length > 0) updateText(MESSAGES[currentMsgIndex]);
         });
 
         initThree();
